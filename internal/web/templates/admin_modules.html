@@ -1,0 +1,29 @@
+{{define "content"}}
+<div class="pagehead">
+  <div>
+    <p class="eyebrow">Administrasi</p>
+    <h1>Modul</h1>
+    <p class="subtitle">Aktif/nonaktifkan modul langsung berlaku tanpa restart. Menambah modul baru tetap memerlukan <span class="mono">go generate ./...</span> dan build ulang.</p>
+  </div>
+</div>
+
+<div class="module-grid">
+  {{range .Modules}}
+  <div class="module-card module-card-static">
+    <span class="module-icon">{{icon .Module.Icon}}</span>
+    <div class="module-title-row"><h3>{{.Module.Name}}</h3><span class="badge {{if .Enabled}}badge-success{{else}}badge-muted{{end}}">{{if .Enabled}}Aktif{{else}}Nonaktif{{end}}</span></div>
+    <p>{{.Module.Description}}</p>
+    <p class="muted mono">v{{.Module.Version}} &middot; {{.Module.Key}}</p>
+    <form method="post" action="/admin/modules/{{.Module.Key}}/toggle">
+      {{template "csrf" $.Base.CSRF}}
+      <button type="submit" class="btn btn-sm {{if .Enabled}}btn-ghost{{else}}btn-primary{{end}}">{{if .Enabled}}Nonaktifkan{{else}}Aktifkan{{end}}</button>
+    </form>
+  </div>
+  {{end}}
+</div>
+
+<section class="card section-card">
+  <div class="section-head"><div><p class="eyebrow">Catatan</p><h2>Plug and play</h2></div></div>
+  <p class="muted">Modul baru tidak perlu mengubah core. Modul mendaftarkan menu, route, job type, settings, template, static, dan skema database sendiri. Lihat <span class="mono">docs/ADDING_MODULES.md</span> untuk langkah lengkap.</p>
+</section>
+{{end}}

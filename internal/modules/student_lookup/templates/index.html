@@ -1,0 +1,66 @@
+{{define "content"}}
+<div class="pagehead">
+  <div>
+    <p class="eyebrow">Dapodik</p>
+    <h1>Cek Siswa</h1>
+    <p class="subtitle">Cari siswa berdasarkan NISN dan lihat status rombel serta NIPD-nya.</p>
+  </div>
+</div>
+
+<div class="grid-2">
+  <section class="card form-card">
+    <div class="section-head"><div><p class="eyebrow">Pencarian</p><h2>Scope &amp; NISN</h2></div></div>
+    <form id="lookup-form" class="stack" autocomplete="off" data-has-scopes="{{if .HasScopes}}1{{else}}0{{end}}">
+      {{with .ScopeErr}}<div class="flash flash-danger">{{icon "alert"}}<span>{{.}}</span></div>{{end}}
+      {{if .HasScopes}}
+      <label class="field">
+        <span>Scope Dapodik</span>
+        <select id="scope-id">
+          {{range .Scopes}}
+          <option value="{{.ID}}" data-base="{{.BaseURL}}" data-sekolah="{{.SekolahID}}" data-npsn="{{.NPSN}}" data-cookie="{{if .CookieConfigured}}1{{else}}0{{end}}">{{.Name}}</option>
+          {{end}}
+        </select>
+        <small>Pilih scope yang diizinkan admin.</small>
+      </label>
+      <p class="muted small" id="scope-summary"></p>
+      <div class="notice notice-warning" id="scope-cookie-warning" hidden>
+        {{icon "alert"}} Scope ini belum memiliki cookie. Hubungi admin.
+      </div>
+      {{else}}
+      <div class="notice notice-warning">
+        {{icon "alert"}} Belum ada scope Dapodik yang tersedia untuk akun ini. Hubungi admin.
+      </div>
+      {{end}}
+      <label class="field">
+        <span>NISN</span>
+        <textarea id="nisn" rows="3" required placeholder="0000000001, 0000000002, 0000000003"></textarea>
+        <small>Pisahkan dengan koma, spasi, atau baris baru. Maksimal 100 NISN.</small>
+      </label>
+      <input type="hidden" id="limit" value="{{.Defaults.Limit}}">
+      <div id="lookup-error" class="flash flash-danger" hidden></div>
+      <button type="submit" class="btn btn-primary btn-block" id="lookup-btn" {{if not .HasScopes}}disabled{{end}}>Cari siswa</button>
+    </form>
+  </section>
+
+  <section class="card section-card" id="result-panel" hidden>
+    <div class="section-head">
+      <div><p class="eyebrow">Hasil</p><h2>Data siswa</h2></div>
+      <span class="muted small" id="result-meta"></span>
+    </div>
+    <div id="missing-box" class="notice notice-warning" hidden></div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Nama</th><th>NISN</th><th>Rombel</th><th>Tingkat</th><th>NIPD</th></tr></thead>
+        <tbody id="result-rows"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<section class="card section-card">
+  <div class="section-head"><div><p class="eyebrow">Info</p><h2>Tentang data</h2></div></div>
+  <p class="muted">Data diambil langsung dari Dapodik dan disimpan di memori server maksimal 5 menit agar pencarian berikutnya lebih cepat. Siswa dengan rombel kosong ditandai <span class="badge badge-warning">(Tanpa Rombel)</span> dan tetap ikut terdeteksi.</p>
+</section>
+{{end}}
+
+{{define "scripts"}}<script src="/static/modules/student_lookup/student_lookup.js"></script>{{end}}

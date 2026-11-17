@@ -1,0 +1,42 @@
+{{define "content"}}
+<div class="pagehead">
+  <div>
+    <p class="eyebrow">Riwayat</p>
+    <h1>Job &amp; aktivitas</h1>
+    <p class="subtitle">Semua job yang pernah dijalankan, lengkap dengan hasil dan unduhan.</p>
+  </div>
+</div>
+
+<section class="card section-card">
+  {{if .Jobs}}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th>Job</th><th>Modul</th><th>Jenis</th><th>Status</th><th>Dibuat</th><th class="right">Aksi</th></tr>
+      </thead>
+      <tbody>
+        {{range .Jobs}}
+        <tr>
+          <td><span class="mono">{{shortID .ID}}</span></td>
+          <td>{{index $.Modules .ModuleKey}}</td>
+          <td>{{index $.Labels .JobType}}</td>
+          <td><span class="badge {{statusClass .Status}}">{{statusLabel .Status}}</span></td>
+          <td class="muted">{{fmtTime .CreatedAt}}</td>
+          <td class="right"><a class="btn btn-sm btn-ghost" href="/jobs/{{.ID}}">Buka</a></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  <div class="pager">
+    <span class="muted">{{.Total}} job &middot; halaman {{.Page}} dari {{.Pages}}</span>
+    <div class="pager-actions">
+      {{if gt .Page 1}}<a class="btn btn-sm btn-ghost" href="/jobs?page={{.Prev}}">Sebelumnya</a>{{end}}
+      {{if lt .Page .Pages}}<a class="btn btn-sm btn-ghost" href="/jobs?page={{.Next}}">Berikutnya</a>{{end}}
+    </div>
+  </div>
+  {{else}}
+  {{template "empty" "Belum ada job."}}
+  {{end}}
+</section>
+{{end}}

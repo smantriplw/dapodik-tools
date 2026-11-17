@@ -1,0 +1,44 @@
+{{define "content"}}
+<div class="pagehead">
+  <div>
+    <p class="eyebrow">Administrasi</p>
+    <h1>Pengaturan</h1>
+    <p class="subtitle">Nilai awal untuk semua modul. Cookie dan token Dapodik tidak pernah disimpan di server.</p>
+  </div>
+</div>
+
+{{with .Error}}<div class="flash flash-danger">{{icon "alert"}}<span>{{.}}</span></div>{{end}}
+
+<div class="notice">
+  {{icon "shield"}} Base URL, sekolah_id, NPSN, cookie, dan token Dapodik dikelola di
+  <a href="/admin/scopes">Dapodik Scopes</a>.
+</div>
+
+<section class="card form-card">
+  <form method="post" action="/admin/settings" class="stack">
+    {{template "csrf" .Base.CSRF}}
+    {{range .Fields}}
+    <label class="field">
+      <span>{{.Label}}</span>
+      {{if eq .Type "select"}}
+      <select name="{{.Key}}">
+        {{$current := index $.Values .Key}}
+        {{range .Options}}<option value="{{.}}" {{if eq . $current}}selected{{end}}>{{.}}</option>{{end}}
+      </select>
+      {{else}}
+      <input type="{{if eq .Type "int"}}number{{else}}text{{end}}" name="{{.Key}}" value="{{index $.Values .Key}}" {{if eq .Type "int"}}min="0" step="1"{{end}}>
+      {{end}}
+      {{with .Help}}<small>{{.}}</small>{{end}}
+    </label>
+    {{end}}
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Simpan pengaturan</button>
+    </div>
+  </form>
+</section>
+
+<section class="card section-card">
+  <div class="section-head"><div><p class="eyebrow">Info</p><h2>Tentang kredensial Dapodik</h2></div></div>
+  <p class="muted">Cookie dan bearer token dimasukkan guru pada setiap job dan hanya disimpan di memori selama job berjalan. Keduanya tidak ditulis ke database, log, audit, atau laporan CSV.</p>
+</section>
+{{end}}

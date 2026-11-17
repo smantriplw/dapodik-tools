@@ -1,0 +1,25 @@
+{{define "content"}}
+<section class="card auth-card">
+  <p class="eyebrow">Portal Internal</p>
+  <h1>Masuk ke SMANTI Tools</h1>
+  <p class="muted">Kelola data Dapodik sekolah dengan aman dan cepat.</p>
+
+  {{with .Error}}<div class="flash flash-danger">{{icon "alert"}}<span>{{.}}</span></div>{{end}}
+
+  <form method="post" action="/login" class="stack" autocomplete="on">
+    <input type="hidden" name="_csrf" value="{{.CSRF}}">
+    {{with .Next}}<input type="hidden" name="next" value="{{.}}">{{end}}
+    <label class="field">
+      <span>Username</span>
+      <input type="text" name="username" value="{{.Username}}" required autofocus autocomplete="username" placeholder="contoh: bu.rina">
+    </label>
+    <label class="field">
+      <span>Password</span>
+      <input type="password" name="password" required autocomplete="current-password" placeholder="Password akun">
+    </label>
+    <button type="submit" class="btn btn-primary btn-block">Masuk</button>
+  </form>
+
+  <p class="auth-note">Belum punya akun? Hubungi administrator sekolah.</p>
+</section>
+{{end}}

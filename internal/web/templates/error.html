@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Status}} &middot; {{.AppName}}</title>
+  <link rel="icon" type="image/png" href="/static/img/logo-smanti.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=Sora:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="auth-body">
+  <main class="auth-wrap">
+    <div class="auth-brand">
+      <img src="/static/img/logo-smanti.png" alt="Logo SMAN 3 Palu" width="52" height="52">
+      <div><strong>SMANTI</strong> Tools<small>SMA Negeri 3 Palu</small></div>
+    </div>
+    <section class="card auth-card">
+      <p class="eyebrow">Error {{.Status}}</p>
+      <h1>{{.Message}}</h1>
+      <p class="muted">Periksa kembali tautan atau hubungi administrator.</p>
+      <a class="btn btn-primary" href="{{.Back}}">Kembali ke Dashboard</a>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,59 @@
+{{define "content"}}
+<div class="pagehead">
+  <div>
+    <p class="eyebrow">Administrasi</p>
+    <h1>{{if .IsNew}}Tambah pengguna{{else}}Edit pengguna{{end}}</h1>
+    <p class="subtitle">Akun guru bisa menjalankan modul. Hanya admin yang dapat mengelola pengguna dan pengaturan.</p>
+  </div>
+  <div class="pagehead-actions"><a class="btn btn-ghost" href="/admin/users">Kembali</a></div>
+</div>
+
+{{with .Error}}<div class="flash flash-danger">{{icon "alert"}}<span>{{.}}</span></div>{{end}}
+
+<section class="card form-card">
+  <form method="post" action="{{.Action}}" class="stack">
+    {{template "csrf" .Base.CSRF}}
+    <label class="field">
+      <span>Username</span>
+      <input type="text" name="username" value="{{.Form.Username}}" {{if not .IsNew}}readonly{{end}} required minlength="3" maxlength="40" pattern="[A-Za-z0-9._-]+" placeholder="contoh: bu.rina">
+      <small>Huruf, angka, titik, garis bawah, atau strip.</small>
+    </label>
+    <label class="field">
+      <span>Nama lengkap</span>
+      <input type="text" name="name" value="{{.Form.Name}}" required maxlength="120" placeholder="Nama guru">
+    </label>
+    <label class="field">
+      <span>Role</span>
+      <select name="role">
+        <option value="guru" {{if eq .Form.Role "guru"}}selected{{end}}>Operator</option>
+        <option value="admin" {{if eq .Form.Role "admin"}}selected{{end}}>Admin</option>
+      </select>
+    </label>
+    <div class="field">
+      <span>Scope Dapodik (untuk Operator)</span>
+      {{if .AllScopes}}
+      <div class="check-list">
+        {{range .AllScopes}}
+        <label class="check"><input type="checkbox" name="scope_ids" value="{{.ID}}" {{if index $.AssignedScopes .ID}}checked{{end}}><span>{{.Name}}</span></label>
+        {{end}}
+      </div>
+      <small>Operator hanya bisa memilih scope yang dicentang. Admin otomatis bisa memakai semua scope.</small>
+      {{else}}
+      <div class="notice">Belum ada scope Dapodik. <a href="/admin/scopes/new">Tambahkan scope</a> terlebih dahulu.</div>
+      {{end}}
+    </div>
+    <label class="field">
+      <span>{{if .IsNew}}Password{{else}}Password baru (opsional){{end}}</span>
+      <input type="password" name="password" {{if .IsNew}}required{{end}} minlength="8" autocomplete="new-password" placeholder="{{if .IsNew}}Minimal 8 karakter{{else}}Kosongkan jika tidak diubah{{end}}">
+    </label>
+    <label class="check">
+      <input type="checkbox" name="active" value="1" {{if .Form.Active}}checked{{end}}>
+      <span>Akun aktif</span>
+    </label>
+    <div class="form-actions">
+      <a class="btn btn-ghost" href="/admin/users">Batal</a>
+      <button type="submit" class="btn btn-primary">Simpan</button>
+    </div>
+  </form>
+</section>
+{{end}}

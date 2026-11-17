@@ -1,0 +1,42 @@
+{{define "csrf"}}<input type="hidden" name="_csrf" value="{{.}}">{{end}}
+
+{{define "flash"}}{{with .Base.Flash}}<div class="flash flash-{{.Kind}}" role="status">
+  {{if eq .Kind "success"}}{{icon "check"}}{{else if eq .Kind "danger"}}{{icon "alert"}}{{else}}{{icon "clock"}}{{end}}
+  <span>{{.Message}}</span>
+  <button type="button" class="flash-close" data-dismiss aria-label="Tutup">&times;</button>
+</div>{{end}}{{end}}
+
+{{define "empty"}}<div class="empty"><div class="empty-icon">{{icon "file"}}</div><p>{{.}}</p></div>{{end}}
+
+{{define "dapodik-guide"}}
+<section class="card section-card">
+  <div class="section-head"><div><p class="eyebrow">Panduan</p><h2>Cara mengambil cookie Dapodik</h2></div></div>
+  <ol class="guide-list">
+    <li>Login ke Dapodik di browser, mis. <span class="mono">https://dapodik2.sekolah.sch.id</span>. Gunakan akun/sesi khusus tool bila tersedia.</li>
+    <li>Buka Developer Tools: tekan <span class="mono">F12</span> (atau klik kanan &rarr; Inspect), lalu pilih tab <strong>Network</strong>.</li>
+    <li>Muat ulang halaman Dapodik (<span class="mono">Ctrl+R</span> / <span class="mono">Cmd+R</span>).</li>
+    <li>Klik salah satu request ke server Dapodik (mis. <span class="mono">PesertaDidik</span> atau halaman utama).</li>
+    <li>Di panel kanan, buka <strong>Headers &rarr; Request Headers</strong>, cari <strong>Cookie</strong>.</li>
+    <li>Salin <strong>seluruh nilai Cookie</strong>, bukan hanya <span class="mono">PHPSESSID</span>. Biasanya termasuk <span class="mono">PHPSESSID</span>, <span class="mono">killme</span>, <span class="mono">dapodik_rememberme</span>, <span class="mono">dapodik_username</span>, <span class="mono">dapodik_password</span>, dan <span class="mono">cf_clearance</span> jika ada.</li>
+    <li>Tempel ke field <strong>Cookie Dapodik</strong>, klik <strong>Simpan scope</strong>.</li>
+    <li>Klik <strong>Tes koneksi</strong>. Jika muncul <em>Session telah habis</em>, ulangi dari langkah 1 atau pastikan cookie tidak terpotong.</li>
+  </ol>
+
+  <div class="notice notice-warning">
+    {{icon "alert"}} Cookie adalah kunci sesi Dapodik. Jangan mengirimnya ke chat/email dan jangan simpan di file publik.
+    Jika cookie disimpan di scope ini, <strong>jangan logout</strong> dari sesi Dapodik tersebut.
+    Gunakan akun/sesi khusus tool bila tersedia.
+  </div>
+
+  <details class="details">
+    <summary>Catatan Cloudflare, kedaluwarsa, dan enkripsi</summary>
+    <ul class="guide-list">
+      <li><span class="mono">cf_clearance</span> dapat terikat pada IP/User-Agent. Jika Dapodik memakai Cloudflare dan server tool memakai IP berbeda, cookie bisa ditolak.</li>
+      <li>Cookie Dapodik punya masa berlaku. Jika job gagal dengan <em>Session telah habis</em>, ambil cookie baru dan simpan ulang di scope yang sesuai.</li>
+      <li>Cookie/token disimpan terenkripsi AES-GCM. Kunci diturunkan dari <span class="mono">CREDENTIALS_KEY</span> atau <span class="mono">SESSION_SECRET</span>.</li>
+      <li>Mengubah <span class="mono">CREDENTIALS_KEY</span>/<span class="mono">SESSION_SECRET</span> membuat kredensial lama tidak bisa didekripsi; simpan ulang.</li>
+      <li>Operator hanya melihat scope yang di-assign admin; admin melihat semua scope.</li>
+    </ul>
+  </details>
+</section>
+{{end}}

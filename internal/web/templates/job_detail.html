@@ -1,0 +1,81 @@
+{{define "content"}}
+<div id="job-detail" data-job-id="{{.Job.ID}}" data-status="{{.Job.Status}}" data-after-seq="{{.LastSeq}}">
+  <div class="pagehead">
+    <div>
+      <p class="eyebrow">{{.ModuleName}} &middot; {{.JobLabel}}</p>
+      <h1>Job <span class="mono">{{shortID .Job.ID}}</span></h1>
+      <p class="subtitle">Dibuat {{fmtTime .Job.CreatedAt}}{{if .Job.StartedAt.Valid}} &middot; mulai {{fmtTime .Job.StartedAt.String}}{{end}}{{if .Job.FinishedAt.Valid}} &middot; selesai {{fmtTime .Job.FinishedAt.String}}{{end}}</p>
+    </div>
+    <div class="pagehead-actions">
+      <a class="btn btn-ghost" href="/jobs">Kembali</a>
+      {{if or (eq .Job.Status "queued") (eq .Job.Status "running")}}
+      <button type="button" class="btn btn-danger" id="cancel-job">Batalkan</button>
+      {{end}}
+      <a class="btn btn-ghost" href="/jobs/{{.Job.ID}}/download.csv">{{icon "download"}} CSV</a>
+      {{if eq .Job.JobType "nipd.renumber.apply"}}<a class="btn btn-ghost" href="/jobs/{{.Job.ID}}/download.rollback.csv">{{icon "refresh"}} Rollback CSV</a>{{end}}
+      <a class="btn btn-ghost" href="/jobs/{{.Job.ID}}/download.json">{{icon "file"}} JSON</a>
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="card stat">
+      <span class="stat-icon">{{icon "clock"}}</span>
+      <div><small>Status</small><strong><span class="badge {{statusClass .Job.Status}}" id="job-status-badge">{{statusLabel .Job.Status}}</span></strong></div>
+    </div>
+    <div class="card stat">
+      <span class="stat-icon">{{icon "check"}}</span>
+      <div><small>Berhasil</small><strong id="counter-ok">{{.Counters.Done}}</strong></div>
+    </div>
+    <div class="card stat">
+      <span class="stat-icon">{{icon "x"}}</span>
+      <div><small>Gagal</small><strong id="counter-failed">{{.Counters.Failed}}</strong></div>
+    </div>
+    <div class="card stat">
+      <span class="stat-icon">{{icon "file"}}</span>
+      <div><small>Item</small><strong id="counter-total">{{.Counters.Total}}</strong></div>
+    </div>
+  </div>
+
+  {{if .SummaryRows}}
+  <section class="card section-card">
+    <div class="section-head"><div><p class="eyebrow">Hasil</p><h2>Ringkasan</h2></div></div>
+    <div class="kv-grid">
+      {{range .SummaryRows}}<div class="kv"><span>{{.Label}}</span><strong>{{.Value}}</strong></div>{{end}}
+    </div>
+  </section>
+  {{end}}
+
+  <section class="card section-card">
+    <div class="section-head"><div><p class="eyebrow">Realtime</p><h2>Progres</h2></div><span class="muted mono" id="job-progress-label">{{.Counters.Current}}/{{.Counters.Total}}</span></div>
+    <progress class="progress" id="job-progress" value="{{.Counters.Current}}" max="{{if gt .Counters.Total 0}}{{.Counters.Total}}{{else}}1{{end}}"></progress>
+    <pre class="console" id="job-log" aria-live="polite">{{range .Events}}{{fmtShort .TS}} [{{.Level}}] {{.Message}}
+{{end}}</pre>
+  </section>
+
+  {{if .Items}}
+  <section class="card section-card">
+    <div class="section-head">
+      <div><p class="eyebrow">Detail</p><h2>Item job</h2></div>
+      {{if .ItemsTruncated}}<span class="muted">Menampilkan {{len .Items}} item terbaru</span>{{end}}
+    </div>
+    <div class="table-wrap tall">
+      <table class="table">
+        <thead><tr><th>Rombel</th><th>Nama</th><th>NISN</th><th>NIPD lama</th><th>NIPD baru</th><th>Status</th></tr></thead>
+        <tbody id="job-items">
+          {{range .Items}}
+          <tr>
+            <td>{{if eq .Group "(Tanpa Rombel)"}}<span class="badge badge-warning">{{.Group}}</span>{{else}}{{.Group}}{{end}}</td>
+            <td>{{.Nama}}</td>
+            <td class="mono">{{.NISN}}</td>
+            <td class="mono muted">{{if .OldNIPD}}{{.OldNIPD}}{{else}}&mdash;{{end}}</td>
+            <td class="mono">{{.NIPD}}</td>
+            <td><span class="badge {{statusClass .Status}}">{{statusLabel .Status}}</span></td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {{end}}
+</div>
+{{end}}

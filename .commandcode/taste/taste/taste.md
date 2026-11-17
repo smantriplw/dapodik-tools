@@ -1,0 +1,11 @@
+# Taste
+- Wants Python scripts that are "easy to run and dynamic": runtime inputs (base URL, cookies/session) supplied by the user instead of hardcoded values. Confidence: 0.65
+- When grouping/sorting school data by rombel (class group), wants all rombels covered (not filtered to one level), sorted by grade from lowest to highest (X → XII), then alphabetically within each grade. Confidence: 0.55
+- Wants output printed step-by-step following the described flow, clearly labeled so each stage of the process is visible. Confidence: 0.6
+- Wants a deliberately simple, lightweight stack with minimal infrastructure burden ("sederhana dan sangat cepat ringan, jangan yang berat secara infra"), lightweight/simple tech stack, with realtime updates where it helps. Confidence: 0.7
+- Prefers Go over Python when it isn't mandated ("Wajib pake python? Ngga mau pake golang gitu?"); don't assume Python is the default language for a new tool. Confidence: 0.6
+- Wants integration credentials (Dapodik URL, cookies/token) configured once centrally by an admin so regular users never paste them, and wants step-by-step guides for obtaining such credentials included in the UI/docs. Confidence: 0.55
+- Corrects role naming to be accurate to who actually does the work: prefers the "Guru" role be called "Operator" instead (data-entry operators aren't necessarily teachers) — pick domain-accurate role names up front. Confidence: 0.5
+- Wants admin/config changes (e.g. enabling/disabling a module) to take effect immediately, without requiring a service restart ("jadi ngga perlu restart segala"). Confidence: 0.65
+- Wants multi-tenant scoping instead of one global config: multiple instances each with its own settings (named freely, A/B/C…), per-user access whitelists to those scopes, and a scope selector when using a feature. Confidence: 0.5
+- Happy to have new UIs follow the existing organizational design kit (e.g. the school site's tokens/fonts/colors) rather than inventing a new visual identity. Confidence: 0.55

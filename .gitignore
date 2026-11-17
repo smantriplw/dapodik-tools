@@ -1,0 +1,28 @@
+# Binary
+/dapodik-tool
+
+# Runtime data
+/data/
+/backup/
+*.db
+*.db-wal
+*.db-shm
+
+# Secrets
+.env
+.env.local
+
+# Python legacy
+__pycache__/
+*.pyc
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Artefak laporan berisi PII
+/hasil_nipd.json
+
+# State tool yang bisa memuat riwayat perintah/kredensial
+/.commandcode/settings.json

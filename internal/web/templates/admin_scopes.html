@@ -1,0 +1,45 @@
+{{define "content"}}
+<div class="pagehead">
+  <div>
+    <p class="eyebrow">Administrasi</p>
+    <h1>Dapodik Scopes</h1>
+    <p class="subtitle">Setiap scope punya URL, sekolah, cookie, dan token sendiri. Operator hanya bisa memakai scope yang di-assign.</p>
+  </div>
+  <div class="pagehead-actions"><a class="btn btn-primary" href="/admin/scopes/new">Tambah scope</a></div>
+</div>
+
+<section class="card section-card">
+  {{if .Scopes}}
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Nama</th><th>Base URL</th><th>Sekolah</th><th>Cookie</th><th>Token</th><th>Diperbarui</th><th class="right">Aksi</th></tr></thead>
+      <tbody>
+        {{range .Scopes}}
+        <tr>
+          <td><strong>{{.Name}}</strong></td>
+          <td class="mono">{{.BaseURL}}</td>
+          <td><span class="mono">{{.SekolahID}}</span>{{if .NPSN}}<small class="muted">NPSN {{.NPSN}}</small>{{end}}</td>
+          <td>{{if .CookieConfigured}}<span class="badge badge-success">Ada</span>{{else}}<span class="badge badge-muted">Belum</span>{{end}}</td>
+          <td>{{if .TokenConfigured}}<span class="badge badge-success">Ada</span>{{else}}<span class="badge badge-muted">Belum</span>{{end}}</td>
+          <td class="muted">{{if .UpdatedAt}}{{fmtTime .UpdatedAt}}{{else}}&mdash;{{end}}</td>
+          <td class="right">
+            <a class="btn btn-sm btn-ghost" href="/admin/scopes/{{.ID}}">Edit</a>
+            <form method="post" action="/admin/scopes/{{.ID}}/delete" class="inline-form" data-confirm="Hapus scope {{.Name}}? Operator yang memakai scope ini akan kehilangan akses.">
+              {{template "csrf" $.Base.CSRF}}
+              <button type="submit" class="btn btn-sm btn-danger">Hapus</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  {{template "empty" "Belum ada scope Dapodik. Tambahkan scope pertama."}}
+  {{end}}
+</section>
+
+<div class="notice">
+  {{icon "shield"}} Operator hanya melihat scope yang dicentang di halaman pengguna. Admin otomatis bisa memakai semua scope.
+</div>
+{{end}}

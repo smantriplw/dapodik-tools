@@ -1,0 +1,74 @@
+{{define "content"}}
+<div class="pagehead">
+  <div>
+    <p class="eyebrow">Dapodik Scopes</p>
+    <h1>{{if .IsNew}}Tambah scope{{else}}Edit scope{{end}}</h1>
+    <p class="subtitle">Kredensial disimpan terenkripsi dan hanya dipakai untuk scope ini.</p>
+  </div>
+  <div class="pagehead-actions"><a class="btn btn-ghost" href="/admin/scopes">Kembali</a></div>
+</div>
+
+{{with .Error}}<div class="flash flash-danger">{{icon "alert"}}<span>{{.}}</span></div>{{end}}
+
+{{if not .IsNew}}
+<div class="stats-grid stats-grid-4">
+  <div class="card stat">
+    <span class="stat-icon">{{icon "shield"}}</span>
+    <div><small>Cookie</small><strong>{{if .CookieState.Configured}}<span class="badge badge-success">Ada</span>{{else if .CookieState.Err}}<span class="badge badge-danger">Rusak</span>{{else}}<span class="badge badge-muted">Belum</span>{{end}}</strong></div>
+  </div>
+  <div class="card stat">
+    <span class="stat-icon">{{icon "key"}}</span>
+    <div><small>Token</small><strong>{{if .TokenState.Configured}}<span class="badge badge-success">Ada</span>{{else if .TokenState.Err}}<span class="badge badge-danger">Rusak</span>{{else}}<span class="badge badge-muted">Belum</span>{{end}}</strong></div>
+  </div>
+  <div class="card stat">
+    <span class="stat-icon">{{icon "clock"}}</span>
+    <div><small>Cookie diperbarui</small><strong>{{if .CookieState.UpdatedAt}}{{fmtTime .CookieState.UpdatedAt}}{{else}}&mdash;{{end}}</strong></div>
+  </div>
+  <div class="card stat">
+    <span class="stat-icon">{{icon "clock"}}</span>
+    <div><small>Token diperbarui</small><strong>{{if .TokenState.UpdatedAt}}{{fmtTime .TokenState.UpdatedAt}}{{else}}&mdash;{{end}}</strong></div>
+  </div>
+</div>
+{{if or .CookieState.Err .TokenState.Err}}
+<div class="flash flash-danger">{{icon "alert"}}<span>Kredensial tidak dapat didekripsi. Simpan ulang cookie/token.</span></div>
+{{end}}
+{{end}}
+
+<div class="grid-2">
+  <section class="card form-card">
+    <div class="section-head"><div><p class="eyebrow">Konfigurasi</p><h2>Detail scope</h2></div></div>
+    <form method="post" action="{{.Action}}" class="stack" autocomplete="off">
+      {{template "csrf" .Base.CSRF}}
+      <label class="field"><span>Nama scope</span><input type="text" name="name" value="{{.Values.Name}}" required maxlength="80" placeholder="Contoh: Dapodik A"></label>
+      <label class="field"><span>Base URL Dapodik</span><input type="url" name="base_url" value="{{.Values.BaseURL}}" required placeholder="https://dapodik2.sekolah.sch.id"></label>
+      <div class="form-row">
+        <label class="field"><span>sekolah_id</span><input type="text" name="sekolah_id" value="{{.Values.SekolahID}}" required placeholder="UUID sekolah"></label>
+        <label class="field"><span>NPSN</span><input type="text" name="npsn" value="{{.Values.NPSN}}" placeholder="NPSN sekolah"></label>
+      </div>
+      <label class="field">
+        <span>Cookie Dapodik</span>
+        <textarea name="cookie" rows="4" placeholder="{{if and (not .IsNew) .CookieState.Configured}}Kosongkan untuk mempertahankan cookie tersimpan{{else}}PHPSESSID=...; killme=dont; ...{{end}}"></textarea>
+        <small>Cookie tidak pernah ditampilkan kembali. Kosongkan jika tidak ingin mengganti.</small>
+      </label>
+      <label class="field">
+        <span>Bearer token (opsional)</span>
+        <input type="password" name="token" placeholder="{{if and (not .IsNew) .TokenState.Configured}}Kosongkan untuk mempertahankan token tersimpan{{else}}Token webservice jika ada{{end}}" autocomplete="off">
+      </label>
+      {{if not .IsNew}}
+      <div class="check-row">
+        <label class="check"><input type="checkbox" name="delete_cookie" value="1"><span>Hapus cookie</span></label>
+        <label class="check"><input type="checkbox" name="delete_token" value="1"><span>Hapus token</span></label>
+      </div>
+      {{end}}
+      <div class="form-actions">
+        {{if not .IsNew}}<button type="button" class="btn btn-ghost" id="scope-test" data-scope-id="{{.ScopeID}}">Tes koneksi</button>{{end}}
+        <button type="submit" class="btn btn-primary">Simpan scope</button>
+      </div>
+      {{if not .IsNew}}<p class="muted small">Tes koneksi memakai kredensial yang sudah tersimpan. Simpan dulu jika baru mengubah cookie.</p>
+      <div id="scope-test-result" class="notice" hidden></div>{{end}}
+    </form>
+  </section>
+
+  {{template "dapodik-guide" .}}
+</div>
+{{end}}

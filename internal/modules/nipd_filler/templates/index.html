@@ -1,0 +1,161 @@
+{{define "content"}}
+<div class="pagehead">
+  <div>
+    <p class="eyebrow">Dapodik</p>
+    <h1>Pengisian NIPD</h1>
+    <p class="subtitle">Isi NIPD kosong atau renumber NIPD lama, preview dulu, pilih rombel, lalu terapkan. Semua perubahan dapat diunduh sebagai laporan.</p>
+  </div>
+</div>
+
+<div class="grid-2">
+  <section class="card form-card">
+    <div class="section-head"><div><p class="eyebrow">Langkah 1</p><h2>Scope &amp; data</h2></div></div>
+    <form id="nipd-form" class="stack" autocomplete="off" data-has-scopes="{{if .HasScopes}}1{{else}}0{{end}}">
+      {{with .ScopeErr}}<div class="flash flash-danger">{{icon "alert"}}<span>{{.}}</span></div>{{end}}
+      {{if .HasScopes}}
+      <label class="field">
+        <span>Scope Dapodik</span>
+        <select id="scope-id">
+          {{range .Scopes}}
+          <option value="{{.ID}}" data-base="{{.BaseURL}}" data-sekolah="{{.SekolahID}}" data-npsn="{{.NPSN}}" data-cookie="{{if .CookieConfigured}}1{{else}}0{{end}}">{{.Name}}</option>
+          {{end}}
+        </select>
+        <small>Pilih salah satu scope yang diizinkan admin. Cookie/token mengikuti scope.</small>
+      </label>
+      <p class="muted small" id="scope-summary"></p>
+      <div class="notice notice-warning" id="scope-cookie-warning" hidden>
+        {{icon "alert"}} Scope ini belum memiliki cookie. Hubungi admin untuk melengkapinya.
+      </div>
+      {{else}}
+      <div class="notice notice-warning">
+        {{icon "alert"}} Belum ada scope Dapodik yang tersedia untuk akun ini. Hubungi admin untuk menambahkan scope dan meng-assign-nya.
+      </div>
+      {{end}}
+
+      <div class="mode-switch" id="mode-switch" role="tablist" aria-label="Mode pengisian NIPD">
+        <button type="button" class="mode-option is-active" data-mode="fill" role="tab" aria-selected="true">Isi NIPD kosong</button>
+        <button type="button" class="mode-option" data-mode="renumber" role="tab" aria-selected="false">Renumber NIPD lama</button>
+      </div>
+      <p class="muted small" id="mode-help">Isi hanya siswa yang belum punya NIPD. NIPD lama tidak diubah.</p>
+
+      <div class="form-row">
+        <label class="field">
+          <span>Limit per halaman</span>
+          <input type="number" id="limit" value="{{.Defaults.Limit}}" min="1" max="50000">
+        </label>
+        <label class="field">
+          <span>Jeda request (detik)</span>
+          <input type="number" id="delay" value="{{.Defaults.Delay}}" min="0" max="10" step="0.1">
+        </label>
+      </div>
+      <div class="stack" id="renumber-options" hidden>
+        <div class="notice notice-warning">
+          {{icon "alert"}} Mode renumber menimpa NIPD yang sudah ada. Preview dan konfirmasi tetap wajib.
+        </div>
+        <div class="form-row">
+          <label class="field">
+            <span>Operator NIPD</span>
+            <select id="renumber-operator">
+              <option value="&gt;" selected>&gt; (lebih besar)</option>
+              <option value="&gt;=">&ge; (lebih besar atau sama)</option>
+              <option value="&lt;">&lt; (lebih kecil)</option>
+              <option value="&lt;=">&le; (lebih kecil atau sama)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Batas NIPD</span>
+            <input type="number" id="renumber-threshold" min="0" placeholder="Contoh: 17978">
+          </label>
+        </div>
+        <label class="field">
+          <span>NIPD awal baru</span>
+          <input type="number" id="renumber-start" min="0" placeholder="Contoh: 17979">
+        </label>
+        <p class="muted small" id="renumber-rule-help">Pilih operator dan batas. NIPD kosong/non-numerik tidak diubah.</p>
+        <p class="muted small">Urutan X A &rarr; XII Z, lalu (Tanpa Rombel). Mengubah operator/batas/start setelah preview memerlukan <strong>Muat data &amp; preview</strong> ulang.</p>
+      </div>
+
+      <details class="details" id="fill-advanced">
+        <summary>Opsi lanjutan</summary>
+        <label class="field">
+          <span>NIPD awal (opsional)</span>
+          <input type="number" id="start-nipd" min="0" placeholder="Kosongkan = NIPD tertinggi + 1">
+        </label>
+      </details>
+      <div id="form-error" class="flash flash-danger" hidden></div>
+      <button type="submit" class="btn btn-primary btn-block" id="preview-btn" {{if not .HasScopes}}disabled{{end}}>Muat data &amp; preview</button>
+      <p class="muted small">Preview bersifat read-only. Tidak ada data yang diubah sampai Anda menekan Terapkan.</p>
+    </form>
+  </section>
+
+  <section class="card section-card" id="preview-panel" hidden>
+    <div class="section-head">
+      <div><p class="eyebrow">Langkah 2</p><h2>Preview NIPD</h2></div>
+      <button type="button" class="btn btn-sm btn-ghost" id="recalc-btn">{{icon "refresh"}} Hitung ulang</button>
+    </div>
+
+    <div class="stats-grid stats-grid-4" id="preview-stats">
+      <div class="stat stat-plain"><small>Total siswa</small><strong id="stat-total">-</strong></div>
+      <div class="stat stat-plain"><small id="stat-empty-label">NIPD kosong</small><strong id="stat-empty">-</strong></div>
+      <div class="stat stat-plain"><small>NIPD tertinggi</small><strong id="stat-highest">-</strong></div>
+      <div class="stat stat-plain"><small>Mulai dari</small><strong id="stat-start">-</strong></div>
+    </div>
+
+    <div class="notice" id="empty-notice" hidden>{{icon "check"}} Semua siswa pada data ini sudah memiliki NIPD. Tidak ada yang perlu diisi.</div>
+    <div class="notice notice-warning" id="renumber-notice" hidden></div>
+
+    <div class="groups-head">
+      <label class="check"><input type="checkbox" id="select-all" checked><span>Pilih semua rombel</span></label>
+      <span class="muted" id="selected-summary">-</span>
+    </div>
+    <div class="group-list" id="groups"></div>
+
+    <div class="table-tools">
+      <input type="search" id="item-filter" placeholder="Cari nama atau NISN...">
+      <span class="muted" id="items-summary"></span>
+    </div>
+    <div class="table-wrap tall">
+      <table class="table">
+        <thead><tr><th>Rombel</th><th>Nama</th><th>NISN</th><th>NIPD lama</th><th>NIPD baru</th></tr></thead>
+        <tbody id="plan-items"></tbody>
+      </table>
+    </div>
+
+    <div class="form-actions">
+      <button type="button" class="btn btn-primary" id="apply-btn" disabled>Terapkan NIPD</button>
+    </div>
+  </section>
+</div>
+
+<section class="card section-card" id="progress-panel" hidden>
+  <div class="section-head">
+    <div><p class="eyebrow">Langkah 3</p><h2>Proses</h2></div>
+    <a class="link" id="job-link" href="#" target="_blank" rel="noopener">Buka detail job</a>
+  </div>
+  <progress class="progress" id="job-progress" value="0" max="1"></progress>
+  <p class="muted" id="progress-label">Menyiapkan job...</p>
+  <pre class="console" id="job-log" aria-live="polite"></pre>
+  <div class="form-actions" id="result-actions" hidden>
+    <a class="btn btn-ghost" id="download-csv" href="#">{{icon "download"}} Unduh CSV</a>
+    <a class="btn btn-ghost" id="download-rollback" href="#" hidden>{{icon "refresh"}} Unduh rollback</a>
+    <a class="btn btn-ghost" id="download-json" href="#">{{icon "file"}} Unduh JSON</a>
+    <button type="button" class="btn btn-primary" id="new-preview-btn">Preview lagi</button>
+  </div>
+</section>
+
+<dialog class="modal" id="apply-dialog">
+  <form method="dialog" class="modal-card">
+    <p class="eyebrow">Konfirmasi</p>
+    <h2>Terapkan NIPD?</h2>
+    <p id="apply-summary" class="muted"></p>
+    <div class="notice notice-warning">{{icon "alert"}} Data akan ditulis ke Dapodik. Pastikan preview sudah benar.</div>
+    <label class="check"><input type="checkbox" id="apply-confirm"><span>Saya sudah memeriksa preview dan yakin melanjutkan.</span></label>
+    <div class="form-actions">
+      <button type="button" class="btn btn-ghost" id="apply-cancel">Batal</button>
+      <button type="button" class="btn btn-primary" id="apply-confirm-btn" disabled>Terapkan sekarang</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+
+{{define "scripts"}}<script src="/static/modules/nipd_filler/nipd_filler.js"></script>{{end}}

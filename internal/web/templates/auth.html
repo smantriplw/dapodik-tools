@@ -1,0 +1,24 @@
+{{define "base"}}<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} &middot; {{.AppName}}</title>
+  <link rel="icon" type="image/png" href="/static/img/logo-smanti.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Sora:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="auth-body">
+  <main class="auth-wrap">
+    <div class="auth-brand">
+      <img src="/static/img/logo-smanti.png" alt="Logo SMAN 3 Palu" width="52" height="52">
+      <div><strong>SMANTI</strong> Tools<small>SMA Negeri 3 Palu</small></div>
+    </div>
+    {{template "content" .}}
+    <p class="auth-foot">&copy; SMA Negeri 3 Palu &middot; Dapodik Tools</p>
+  </main>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>{{end}}

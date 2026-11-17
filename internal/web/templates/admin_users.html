@@ -1,0 +1,31 @@
+{{define "content"}}
+<div class="pagehead">
+  <div>
+    <p class="eyebrow">Administrasi</p>
+    <h1>Pengguna</h1>
+    <p class="subtitle">Kelola akun guru dan administrator yang bisa mengakses tool.</p>
+  </div>
+  <div class="pagehead-actions"><a class="btn btn-primary" href="/admin/users/new">Tambah pengguna</a></div>
+</div>
+
+<section class="card section-card">
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Nama</th><th>Username</th><th>Role</th><th>Scope Dapodik</th><th>Status</th><th>Login terakhir</th><th class="right">Aksi</th></tr></thead>
+      <tbody>
+        {{range .Users}}
+        <tr>
+          <td><strong>{{.Name}}</strong>{{if eq .ID $.Base.User.ID}} <span class="badge badge-muted">Anda</span>{{end}}</td>
+          <td class="mono">{{.Username}}</td>
+          <td>{{roleLabel .Role}}</td>
+          <td class="muted">{{index $.ScopeDisplay .ID}}</td>
+          <td>{{if .IsActive}}<span class="badge badge-success">Aktif</span>{{else}}<span class="badge badge-muted">Nonaktif</span>{{end}}</td>
+          <td class="muted">{{if .LastLoginAt.Valid}}{{fmtTime .LastLoginAt.String}}{{else}}Belum pernah{{end}}</td>
+          <td class="right"><a class="btn btn-sm btn-ghost" href="/admin/users/{{.ID}}">Edit</a></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}

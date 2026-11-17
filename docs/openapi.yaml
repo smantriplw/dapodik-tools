@@ -1,0 +1,1859 @@
+openapi: 3.0.3
+info:
+  title: SMANTI Tools — Dapodik Internal API
+  version: 1.3.1
+  description: |
+    API internal untuk web tool Dapodik SMAN 3 Palu.
+
+    Konvensi:
+    - Autentikasi memakai cookie sesi `smanti_session` (HttpOnly).
+    - Semua request non-GET wajib CSRF: header `X-CSRF-Token` untuk JSON,
+      atau field `_csrf` untuk form-urlencoded.
+    - Endpoint yang mengembalikan job memakai HTTP 202; keberhasilan/kegagalan
+      Dapodik terlihat pada status job, snapshot, SSE, dan log.
+    - Admin mengelola beberapa **scope Dapodik** di `/admin/scopes`; setiap
+      scope punya URL, sekolah, cookie, dan token sendiri yang disimpan
+      terenkripsi AES-GCM. Operator hanya bisa memakai scope yang di-assign.
+    - Endpoint modul menerima `scope_id`; kredensial didekripsi ke memori job
+      dan tidak pernah masuk log/audit/CSV atau dirender kembali ke UI.
+    - Aktif/nonaktif modul berlaku langsung; modul nonaktif mengembalikan 404
+      dan tidak menerima job baru.
+    - Halaman HTML ikut didokumentasikan untuk kelengkapan; konsumen API
+      sebaiknya memakai endpoint JSON/SSE.
+
+    API ini tidak memiliki jaminan kompatibilitas eksternal. Lihat
+    `docs/API_REFERENCE.md` untuk penjelasan manusia.
+  contact:
+    name: Administrator SMAN 3 Palu
+externalDocs:
+  description: Referensi API (manusia)
+  url: ./API_REFERENCE.md
+servers:
+  - url: https://nipd.sekolah.sch.id
+    description: Production (ganti domain)
+  - url: http://127.0.0.1:8000
+    description: Local development
+security:
+  - cookieAuth: []
+tags:
+  - name: Auth
+    description: Login, logout, sesi.
+  - name: Pages
+    description: Halaman HTML dashboard, job, dan akun.
+  - name: Jobs
+    description: Snapshot, SSE, cancel, unduhan job.
+  - name: NIPD
+    description: Modul preview/apply NIPD.
+  - name: Student Lookup
+    description: Pencarian NISN.
+  - name: Admin
+    description: Pengguna, pengaturan, modul.
+  - name: Utility
+    description: Health check.
+
+paths:
+  /login:
+    get:
+      tags: [Auth]
+      operationId: loginPage
+      summary: Halaman login
+      description: Membuat sesi anonim berisi token CSRF jika belum ada.
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Login akun
+      description: |
+        Memvalidasi CSRF, rate limit, dan kredensial. Sukses membuat cookie sesi
+        baru dan redirect ke `next` atau `/`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LoginForm'
+      responses:
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '401':
+          description: Kredensial salah/akun nonaktif/rate limit; halaman login dirender ulang.
+          content:
+            text/html:
+              schema:
+                type: string
+        '403':
+          description: CSRF tidak valid.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Logout
+      description: Menghapus cookie sesi dan redirect ke `/login`.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LogoutForm'
+      responses:
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /:
+    get:
+      tags: [Pages]
+      operationId: dashboard
+      summary: Dashboard
+      description: Kartu modul, statistik, dan job terakhir.
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+
+  /jobs:
+    get:
+      tags: [Jobs]
+      operationId: listJobs
+      summary: Riwayat job
+      description: Operator melihat job sendiri; admin melihat semua job.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+
+  /jobs/{id}:
+    get:
+      tags: [Jobs]
+      operationId: jobDetail
+      summary: Detail job
+      parameters:
+        - $ref: '#/components/parameters/JobID'
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{id}/snapshot:
+    get:
+      tags: [Jobs]
+      operationId: jobSnapshot
+      summary: Snapshot job (JSON)
+      description: |
+        Dipakai fallback polling. `items` dibatasi 200 terbaru; CSV/JSON berisi
+        semua item. `events` hanya event dengan `seq` > `after`.
+      parameters:
+        - $ref: '#/components/parameters/JobID'
+        - $ref: '#/components/parameters/AfterSeq'
+      responses:
+        '200':
+          description: Snapshot job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{id}/events:
+    get:
+      tags: [Jobs]
+      operationId: jobEvents
+      summary: Stream SSE job
+      description: |
+        Stream `text/event-stream`.
+
+        Setiap event log:
+        ```
+        id: <seq>
+        event: message
+        data: <JobEvent JSON>
+
+        ```
+        Saat job selesai:
+        ```
+        event: end
+        data: {"status":"done"}
+
+        ```
+        Heartbeat berupa komentar `: keep-alive`.
+        Reconnect memakai header `Last-Event-ID` atau query `after`.
+      parameters:
+        - $ref: '#/components/parameters/JobID'
+        - $ref: '#/components/parameters/AfterSeq'
+        - $ref: '#/components/parameters/LastEventID'
+      responses:
+        '200':
+          description: Stream SSE.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-cache, no-transform
+            X-Accel-Buffering:
+              schema:
+                type: string
+                example: 'no'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Urutan event `message` dan `end` sesuai format di deskripsi.
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{id}/cancel:
+    post:
+      tags: [Jobs]
+      operationId: cancelJob
+      summary: Batalkan job
+      description: |
+        Job queued langsung dibatalkan; job running berhenti sebelum operasi
+        tulis berikutnya. UI memakai JSON; fallback form akan redirect.
+      parameters:
+        - $ref: '#/components/parameters/JobID'
+        - $ref: '#/components/parameters/CSRFHeader'
+      responses:
+        '200':
+          description: Permintaan pembatalan diterima.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCancelResponse'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /jobs/{id}/download.csv:
+    get:
+      tags: [Jobs]
+      operationId: downloadJobCSV
+      summary: Unduh CSV job
+      description: |
+        UTF-8 BOM. Kolom: `rombel,nama,nisn,registrasi_id,nipd_lama,nipd_baru,status,pesan`.
+        Nilai yang diawali `= + - @` diberi prefix `'` untuk mencegah formula injection.
+      parameters:
+        - $ref: '#/components/parameters/JobID'
+      responses:
+        '200':
+          description: File CSV.
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: attachment; filename="job-0123456789abcdef0123.csv"
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{id}/download.json:
+    get:
+      tags: [Jobs]
+      operationId: downloadJobJSON
+      summary: Unduh JSON job
+      parameters:
+        - $ref: '#/components/parameters/JobID'
+      responses:
+        '200':
+          description: File JSON lengkap.
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: attachment; filename="job-0123456789abcdef0123.json"
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobExport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{id}/download.rollback.csv:
+    get:
+      tags: [Jobs]
+      operationId: downloadJobRollbackCSV
+      summary: Unduh CSV rollback renumber
+      description: |
+        Khusus job `nipd.renumber.apply`. Hanya item berstatus `ok` yang
+        ditulis. Kolom: `registrasi_id,nama,nisn,rombel,nipd_lama,nipd_baru,status`.
+        Job tipe lain mendapat `400`.
+      parameters:
+        - $ref: '#/components/parameters/JobID'
+      responses:
+        '200':
+          description: File CSV rollback.
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: attachment; filename="rollback-0123456789abcdef0123.csv"
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /account/password:
+    get:
+      tags: [Pages]
+      operationId: passwordPage
+      summary: Halaman ganti password
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+    post:
+      tags: [Pages]
+      operationId: changePassword
+      summary: Ganti password sendiri
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordForm'
+      responses:
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '400':
+          description: Password lama salah atau konfirmasi tidak sama.
+          content:
+            text/html:
+              schema:
+                type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/users:
+    get:
+      tags: [Admin]
+      operationId: adminUserList
+      summary: Daftar pengguna
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/users/new:
+    get:
+      tags: [Admin]
+      operationId: adminUserNewPage
+      summary: Form tambah pengguna
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin]
+      operationId: adminUserCreate
+      summary: Buat pengguna
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserForm'
+      responses:
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '400':
+          description: Validasi gagal (username, nama, role, password).
+          content:
+            text/html:
+              schema:
+                type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/users/{id}:
+    get:
+      tags: [Admin]
+      operationId: adminUserEditPage
+      summary: Form edit pengguna
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Admin]
+      operationId: adminUserUpdate
+      summary: Simpan perubahan pengguna
+      description: Username tidak diubah. Password kosong berarti tidak diubah.
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserForm'
+      responses:
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '400':
+          description: Validasi gagal atau aturan admin terakhir dilanggar.
+          content:
+            text/html:
+              schema:
+                type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/scopes:
+    get:
+      tags: [Admin]
+      operationId: adminScopesPage
+      summary: Daftar scope Dapodik
+      description: Hanya admin. Menampilkan scope, status kredensial, dan aksi edit/hapus.
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/scopes/new:
+    get:
+      tags: [Admin]
+      operationId: adminScopeNewPage
+      summary: Form scope baru
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin]
+      operationId: adminScopeCreate
+      summary: Buat scope Dapodik
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DapodikScopeForm'
+      responses:
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '400':
+          description: Validasi gagal atau nama scope sudah dipakai.
+          content:
+            text/html:
+              schema:
+                type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/scopes/{id}:
+    get:
+      tags: [Admin]
+      operationId: adminScopeEditPage
+      summary: Form edit scope
+      parameters:
+        - $ref: '#/components/parameters/ScopeID'
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Admin]
+      operationId: adminScopeUpdate
+      summary: Simpan perubahan scope
+      description: Field cookie/token kosong mempertahankan nilai tersimpan; checkbox hapus mencabut kredensial.
+      parameters:
+        - $ref: '#/components/parameters/ScopeID'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DapodikScopeForm'
+      responses:
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '400':
+          description: Validasi gagal atau nama scope sudah dipakai.
+          content:
+            text/html:
+              schema:
+                type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/scopes/{id}/test:
+    post:
+      tags: [Admin]
+      operationId: adminScopeTest
+      summary: Tes koneksi scope
+      description: Tes read-only memakai kredensial scope yang tersimpan.
+      parameters:
+        - $ref: '#/components/parameters/ScopeID'
+        - $ref: '#/components/parameters/CSRFHeader'
+      responses:
+        '200':
+          description: Koneksi berhasil.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DapodikScopeTestResponse'
+        '400':
+          description: Scope belum memiliki cookie atau kredensial tidak dapat didekripsi.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  /admin/scopes/{id}/delete:
+    post:
+      tags: [Admin]
+      operationId: adminScopeDelete
+      summary: Hapus scope
+      description: Menghapus scope beserta kredensial dan assignment operator. Riwayat job tetap ada.
+      parameters:
+        - $ref: '#/components/parameters/ScopeID'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CSRFOnlyForm'
+      responses:
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/dapodik:
+    get:
+      tags: [Admin]
+      operationId: adminDapodikLegacyRedirect
+      summary: Redirect halaman lama
+      description: Redirect kompatibilitas ke `/admin/scopes`.
+      responses:
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/settings:
+    get:
+      tags: [Admin]
+      operationId: adminSettingsPage
+      summary: Halaman pengaturan
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin]
+      operationId: adminSettingsSave
+      summary: Simpan pengaturan
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SettingsForm'
+      responses:
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '400':
+          description: Nilai integer tidak valid atau field wajib kosong.
+          content:
+            text/html:
+              schema:
+                type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/modules:
+    get:
+      tags: [Admin]
+      operationId: adminModulesPage
+      summary: Daftar modul terpasang
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/modules/{key}/toggle:
+    post:
+      tags: [Admin]
+      operationId: adminModuleToggle
+      summary: Aktif/nonaktif modul
+      description: Langsung berlaku tanpa restart. Modul nonaktif mengembalikan 404 dan tidak menerima job baru.
+      parameters:
+        - $ref: '#/components/parameters/ModuleKey'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ModuleToggleForm'
+      responses:
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /nipd-filler/:
+    get:
+      tags: [NIPD]
+      operationId: nipdPage
+      summary: Halaman Pengisian NIPD
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /nipd-filler/api/preview:
+    post:
+      tags: [NIPD]
+      operationId: nipdPreview
+      summary: Mulai job preview
+      description: |
+        Job `nipd.preview` mengambil semua siswa, menghitung NIPD tertinggi,
+        mengelompokkan rombel, dan menyimpan rencana. Read-only terhadap Dapodik.
+        Kesalahan Dapodik membuat job `failed`, bukan HTTP error.
+      parameters:
+        - $ref: '#/components/parameters/CSRFHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NIPDPreviewRequest'
+      responses:
+        '202':
+          description: Job diterima.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobIDResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /nipd-filler/api/preview/{job_id}:
+    get:
+      tags: [NIPD]
+      operationId: nipdPreviewData
+      summary: Data preview
+      description: Job preview harus `done`, milik user, atau user admin.
+      parameters:
+        - $ref: '#/components/parameters/PreviewJobID'
+      responses:
+        '200':
+          description: Data preview.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewData'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /nipd-filler/api/recalc:
+    post:
+      tags: [NIPD]
+      operationId: nipdRecalc
+      summary: Hitung ulang rencana
+      description: |
+        Menghitung ulang dari item preview tanpa fetch Dapodik. Jika `groups`
+        tidak dikirim, semua grup dipilih; array kosong berarti tidak ada grup.
+      parameters:
+        - $ref: '#/components/parameters/CSRFHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NIPDRecalcRequest'
+      responses:
+        '200':
+          description: Rencana yang dihitung ulang.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewData'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /nipd-filler/api/apply:
+    post:
+      tags: [NIPD]
+      operationId: nipdApply
+      summary: Mulai job apply
+      description: |
+        Job `nipd.apply` fetch ulang, membandingkan fingerprint preview, lalu
+        mengirim PUT NIPD per siswa. Jika fingerprint berbeda, job gagal tanpa
+        menulis. Nomor NIPD gagal tidak dipakai ulang.
+      parameters:
+        - $ref: '#/components/parameters/CSRFHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NIPDApplyRequest'
+      responses:
+        '202':
+          description: Job apply diterima.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobIDResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /nipd-filler/api/renumber/preview:
+    post:
+      tags: [NIPD]
+      operationId: nipdRenumberPreview
+      summary: Mulai job preview renumber
+      description: |
+        Job `nipd.renumber.preview` mengambil semua siswa dan merencanakan
+        penggantian NIPD numerik yang memenuhi `operator` terhadap `threshold`,
+        berurutan mulai `start_nipd`. Read-only terhadap Dapodik.
+      parameters:
+        - $ref: '#/components/parameters/CSRFHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NIPDRenumberPreviewRequest'
+      responses:
+        '202':
+          description: Job diterima.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobIDResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /nipd-filler/api/renumber/preview/{job_id}:
+    get:
+      tags: [NIPD]
+      operationId: nipdRenumberPreviewData
+      summary: Data preview renumber
+      parameters:
+        - $ref: '#/components/parameters/PreviewJobID'
+      responses:
+        '200':
+          description: Data preview renumber.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewData'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /nipd-filler/api/renumber/recalc:
+    post:
+      tags: [NIPD]
+      operationId: nipdRenumberRecalc
+      summary: Hitung ulang renumber untuk grup terpilih
+      description: |
+        `threshold` dan `start_nipd` mengikuti preview; hanya pemilihan grup
+        yang berubah. `groups` tidak dikirim berarti semua grup; array kosong
+        berarti tidak ada grup. Konflik NIPD non-target dihitung ulang.
+      parameters:
+        - $ref: '#/components/parameters/CSRFHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NIPDRenumberRecalcRequest'
+      responses:
+        '200':
+          description: Rencana renumber yang dihitung ulang.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewData'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /nipd-filler/api/renumber/apply:
+    post:
+      tags: [NIPD]
+      operationId: nipdRenumberApply
+      summary: Mulai job apply renumber
+      description: |
+        Job `nipd.renumber.apply` fetch ulang, membandingkan fingerprint,
+        menolak konflik, lalu mengirim PUT NIPD. Rollback CSV tersedia setelah
+        job selesai.
+      parameters:
+        - $ref: '#/components/parameters/CSRFHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NIPDRenumberApplyRequest'
+      responses:
+        '202':
+          description: Job apply renumber diterima.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobIDResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /student-lookup/:
+    get:
+      tags: [Student Lookup]
+      operationId: studentLookupPage
+      summary: Halaman Cek Siswa
+      responses:
+        '200':
+          $ref: '#/components/responses/HtmlPage'
+        '303':
+          $ref: '#/components/responses/Redirect303'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /student-lookup/api/search:
+    post:
+      tags: [Student Lookup]
+      operationId: studentLookupSearch
+      summary: Cari NISN
+      description: |
+        Maksimal 100 NISN, tiap NISN 4–20 digit, dipisah koma/spasi/baris baru.
+        Pilih `scope_id`; cache memori 5 menit per hash(scope, kredensial, limit).
+      parameters:
+        - $ref: '#/components/parameters/CSRFHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StudentSearchRequest'
+      responses:
+        '200':
+          description: Hasil pencarian.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentSearchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /healthz:
+    get:
+      tags: [Utility]
+      operationId: healthz
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: Aplikasi hidup.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, app]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  app:
+                    type: string
+                    example: SMANTI Tools
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: smanti_session
+
+  parameters:
+    JobID:
+      name: id
+      in: path
+      required: true
+      description: ID job (20 karakter hex).
+      schema:
+        type: string
+        pattern: '^[a-f0-9]{20}$'
+        example: '0123456789abcdef0123'
+    PreviewJobID:
+      name: job_id
+      in: path
+      required: true
+      description: ID job preview NIPD.
+      schema:
+        type: string
+        pattern: '^[a-f0-9]{20}$'
+        example: '0123456789abcdef0123'
+    UserID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    ModuleKey:
+      name: key
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-z0-9_]+$'
+        example: nipd_filler
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    AfterSeq:
+      name: after
+      in: query
+      required: false
+      description: Kembalikan event dengan seq lebih besar dari nilai ini.
+      schema:
+        type: integer
+        format: int64
+        minimum: 0
+        default: 0
+    LastEventID:
+      name: Last-Event-ID
+      in: header
+      required: false
+      description: Sequence terakhir yang sudah diterima klien SSE.
+      schema:
+        type: integer
+        format: int64
+        minimum: 0
+    ScopeID:
+      name: id
+      in: path
+      required: true
+      description: ID scope Dapodik (24 karakter hex).
+      schema:
+        type: string
+        pattern: '^[a-f0-9]{24}$'
+        example: 'a1b2c3d4e5f60718293a4b5c'
+    CSRFHeader:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      description: Token CSRF dari meta/halaman sesi.
+      schema:
+        type: string
+
+  headers:
+    Location:
+      description: URL redirect.
+      schema:
+        type: string
+        example: /jobs
+
+  responses:
+    Redirect303:
+      description: Redirect (biasanya ke dashboard/login/job).
+      headers:
+        Location:
+          $ref: '#/components/headers/Location'
+    HtmlPage:
+      description: Halaman HTML.
+      content:
+        text/html:
+          schema:
+            type: string
+    BadRequest:
+      description: Validasi input gagal.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Belum login atau sesi tidak valid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Role/CSRF/akses ditolak.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource tidak ditemukan.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Status resource tidak mendukung aksi.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadGateway:
+      description: Gagal mengambil data dari Dapodik.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalServerError:
+      description: Kesalahan internal server.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: silakan login
+
+    LoginForm:
+      type: object
+      required: [_csrf, username, password]
+      properties:
+        _csrf:
+          type: string
+        username:
+          type: string
+          minLength: 3
+          maxLength: 40
+        password:
+          type: string
+          format: password
+        next:
+          type: string
+          description: Path internal tujuan setelah login.
+          example: /nipd-filler/
+
+    LogoutForm:
+      type: object
+      required: [_csrf]
+      properties:
+        _csrf:
+          type: string
+
+    PasswordForm:
+      type: object
+      required: [_csrf, current, next, confirm]
+      properties:
+        _csrf:
+          type: string
+        current:
+          type: string
+          format: password
+        next:
+          type: string
+          format: password
+          minLength: 8
+        confirm:
+          type: string
+          format: password
+          minLength: 8
+
+    UserForm:
+      type: object
+      required: [_csrf, username, name, role]
+      properties:
+        _csrf:
+          type: string
+        username:
+          type: string
+          pattern: '^[A-Za-z0-9._-]{3,40}$'
+          description: Hanya dipakai saat tambah; edit mengabaikan nilai ini.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        role:
+          type: string
+          enum: [admin, guru]
+          description: Label UI Operator memakai nilai internal `guru`.
+        password:
+          type: string
+          format: password
+          minLength: 8
+          description: Wajib saat tambah; kosongkan saat edit jika tidak diubah.
+        active:
+          type: boolean
+          description: Checkbox aktif. Nilai form `1` berarti true.
+        scope_ids:
+          type: array
+          description: |
+            Scope Dapodik yang diizinkan untuk Operator. Diabaikan untuk Admin
+            (admin otomatis memakai semua scope). Kirim field berulang
+            `scope_ids=<id>` pada form.
+          items:
+            type: string
+            pattern: '^[a-f0-9]{24}$'
+
+    SettingsForm:
+      type: object
+      required: [_csrf]
+      description: |
+        Key pengaturan inti: `nipd.limit`, `nipd.delay`, `retention_days`.
+        Scope Dapodik, kredensial, dan assignment operator dikelola di
+        `/admin/scopes`, bukan di sini. Modul dapat menambah key sendiri.
+      properties:
+        _csrf:
+          type: string
+        nipd.limit:
+          type: string
+        nipd.delay:
+          type: string
+        retention_days:
+          type: string
+      additionalProperties:
+        type: string
+
+    ModuleToggleForm:
+      type: object
+      required: [_csrf]
+      properties:
+        _csrf:
+          type: string
+
+    DapodikScopeForm:
+      type: object
+      required: [_csrf, name, base_url, sekolah_id]
+      properties:
+        _csrf:
+          type: string
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+          example: Dapodik A
+        base_url:
+          type: string
+          format: uri
+          example: https://dapodik.sekolah.sch.id
+        sekolah_id:
+          type: string
+          example: UUID_SEKOLAH
+        npsn:
+          type: string
+          example: '40203612'
+        cookie:
+          type: string
+          format: password
+          writeOnly: true
+          description: Kosong = pertahankan cookie tersimpan. Disimpan terenkripsi per scope.
+        token:
+          type: string
+          format: password
+          writeOnly: true
+          description: Kosong = pertahankan token tersimpan. Disimpan terenkripsi per scope.
+        delete_cookie:
+          type: boolean
+          description: Hapus cookie scope.
+        delete_token:
+          type: boolean
+          description: Hapus token scope.
+
+    DapodikScopeTestResponse:
+      type: object
+      required: [ok, message]
+      properties:
+        ok:
+          type: boolean
+        message:
+          type: string
+          example: Koneksi scope Dapodik A berhasil. 1 baris diterima.
+        rows:
+          type: integer
+        total:
+          type: integer
+          nullable: true
+        scope:
+          type: string
+          example: Dapodik A
+
+    CSRFOnlyForm:
+      type: object
+      required: [_csrf]
+      properties:
+        _csrf:
+          type: string
+
+    JobIDResponse:
+      type: object
+      required: [job_id]
+      properties:
+        job_id:
+          type: string
+          pattern: '^[a-f0-9]{20}$'
+
+    JobCancelResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: cancelling
+
+    JobStatus:
+      type: string
+      enum: [queued, running, done, failed, cancelled]
+
+    JobSummary:
+      type: object
+      description: Ringkasan bebas per jenis job.
+      additionalProperties: true
+
+    JobEvent:
+      type: object
+      required: [seq, ts, level, message, data]
+      properties:
+        seq:
+          type: integer
+          format: int64
+        ts:
+          type: string
+          description: RFC3339Nano UTC.
+          example: '2026-01-01T00:00:00Z'
+        level:
+          type: string
+          enum: [info, warn, error, success, progress]
+        message:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+          description: |
+            Untuk `progress`, biasanya berisi `current`, `total`, dan `label`.
+
+    JobItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        group:
+          type: string
+          example: X A
+        nama:
+          type: string
+        nisn:
+          type: string
+        registrasi_id:
+          type: string
+        old_nipd:
+          type: string
+        nipd:
+          type: string
+        status:
+          type: string
+          description: '`ok`, `failed`, `skipped`, `preview`, `filled`.'
+        message:
+          type: string
+
+    Counters:
+      type: object
+      required: [total, current, done, failed, skipped]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        current:
+          type: integer
+          minimum: 0
+        done:
+          type: integer
+          minimum: 0
+        failed:
+          type: integer
+          minimum: 0
+        skipped:
+          type: integer
+          minimum: 0
+
+    JobSnapshotJob:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        error:
+          type: string
+        created_at:
+          type: string
+        started_at:
+          type: string
+          description: Kosong jika belum mulai.
+        finished_at:
+          type: string
+          description: Kosong jika belum selesai.
+
+    JobSnapshot:
+      type: object
+      required: [job, summary, items, events, counters]
+      properties:
+        job:
+          $ref: '#/components/schemas/JobSnapshotJob'
+        summary:
+          $ref: '#/components/schemas/JobSummary'
+        items:
+          type: array
+          nullable: true
+          description: Maksimal 200 item terbaru; null jika belum ada item.
+          items:
+            $ref: '#/components/schemas/JobItem'
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobEvent'
+        counters:
+          $ref: '#/components/schemas/Counters'
+
+    JobExport:
+      type: object
+      properties:
+        id:
+          type: string
+        module_key:
+          type: string
+        job_type:
+          type: string
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        created_at:
+          type: string
+        started_at:
+          type: string
+        finished_at:
+          type: string
+        summary:
+          $ref: '#/components/schemas/JobSummary'
+        error:
+          type: string
+        items:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/JobItem'
+        public_params:
+          type: object
+          additionalProperties: true
+          description: Parameter publik; tidak pernah memuat cookie/token.
+
+    NIPDPreviewRequest:
+      type: object
+      description: |
+        Pilih scope Dapodik. Jika akun hanya punya satu scope, `scope_id`
+        boleh dikosongkan. URL/sekolah/cookie/token diambil dari scope dan
+        tidak pernah dikirim di request.
+      properties:
+        scope_id:
+          type: string
+          pattern: '^[a-f0-9]{24}$'
+          description: Scope yang di-assign ke operator; kosong = satu-satunya scope.
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50000
+          default: 20000
+        delay:
+          type: number
+          minimum: 0
+          maximum: 10
+          description: Jeda antar request (detik). Form default 0.3; API jika tidak dikirim = 0.
+        start_nipd:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Kosongkan untuk memakai NIPD tertinggi + 1.
+
+    NIPDRecalcRequest:
+      type: object
+      required: [job_id]
+      properties:
+        job_id:
+          type: string
+          pattern: '^[a-f0-9]{20}$'
+        groups:
+          type: array
+          nullable: true
+          description: Jika tidak dikirim, semua grup; array kosong berarti tidak ada grup.
+          items:
+            type: string
+        start_nipd:
+          type: integer
+          minimum: 0
+          nullable: true
+
+    NIPDApplyRequest:
+      type: object
+      required: [preview_job_id, groups]
+      properties:
+        preview_job_id:
+          type: string
+          pattern: '^[a-f0-9]{20}$'
+        groups:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        delay:
+          type: number
+          minimum: 0
+          maximum: 10
+        start_nipd:
+          type: integer
+          minimum: 0
+          nullable: true
+
+    NIPDRenumberPreviewRequest:
+      type: object
+      required: [threshold, start_nipd]
+      properties:
+        scope_id:
+          type: string
+          pattern: '^[a-f0-9]{24}$'
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50000
+          default: 20000
+        delay:
+          type: number
+          minimum: 0
+          maximum: 10
+        threshold:
+          type: integer
+          minimum: 0
+          description: Batas NIPD yang dibandingkan dengan operator.
+          example: 17978
+        operator:
+          type: string
+          enum: ['>', '>=', '<', '<=']
+          default: '>'
+          description: Operator pembanding NIPD numerik terhadap threshold.
+          example: '>'
+        start_nipd:
+          type: integer
+          minimum: 0
+          description: NIPD baru pertama. Tidak harus di atas threshold; konflik tetap dicek.
+          example: 17979
+
+    NIPDRenumberRecalcRequest:
+      type: object
+      required: [job_id]
+      properties:
+        job_id:
+          type: string
+          pattern: '^[a-f0-9]{20}$'
+        groups:
+          type: array
+          nullable: true
+          description: Jika tidak dikirim, semua grup; array kosong berarti tidak ada grup.
+          items:
+            type: string
+
+    NIPDRenumberApplyRequest:
+      type: object
+      required: [preview_job_id, groups]
+      properties:
+        preview_job_id:
+          type: string
+          pattern: '^[a-f0-9]{20}$'
+        groups:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        delay:
+          type: number
+          minimum: 0
+          maximum: 10
+
+    PreviewSummary:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [preview, renumber]
+          example: preview
+        total_students:
+          type: integer
+        filled:
+          type: integer
+        empty:
+          type: integer
+        highest_nipd:
+          type: integer
+        start_nipd:
+          type: integer
+        no_rombel:
+          type: integer
+        groups:
+          type: integer
+        items:
+          type: integer
+        fingerprint:
+          type: string
+        threshold:
+          type: integer
+          description: Hanya pada mode renumber.
+        operator:
+          type: string
+          enum: ['>', '>=', '<', '<=']
+          default: '>'
+          description: Operator pembanding NIPD terhadap threshold.
+        eligible:
+          type: integer
+          description: Jumlah siswa terpilih yang akan di-renumber.
+        kept:
+          type: integer
+        skipped:
+          type: integer
+        old_min:
+          type: integer
+        old_max:
+          type: integer
+        new_min:
+          type: integer
+        new_max:
+          type: integer
+        conflict_count:
+          type: integer
+          description: Jumlah NIPD non-target di rentang baru; apply diblokir jika > 0.
+        conflicts:
+          type: array
+          items:
+            type: integer
+
+    PreviewGroup:
+      type: object
+      required: [label, total, empty]
+      properties:
+        label:
+          type: string
+          example: X A
+        total:
+          type: integer
+        empty:
+          type: integer
+        eligible:
+          type: integer
+          description: Jumlah siswa grup ini yang memenuhi operator threshold (mode renumber).
+
+    PreviewItem:
+      type: object
+      properties:
+        group:
+          type: string
+        nama:
+          type: string
+        nisn:
+          type: string
+        registrasi_id:
+          type: string
+        old_nipd:
+          type: string
+        nipd:
+          type: string
+          description: NIPD baru yang direncanakan.
+        status:
+          type: string
+          example: planned
+
+    PreviewData:
+      type: object
+      required: [summary, groups, items]
+      properties:
+        summary:
+          $ref: '#/components/schemas/PreviewSummary'
+        groups:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/PreviewGroup'
+        items:
+          type: array
+          nullable: true
+          description: |
+            Mode isi: siswa kosong pada grup terpilih. Mode renumber: siswa
+            yang memenuhi operator threshold pada grup terpilih.
+          items:
+            $ref: '#/components/schemas/PreviewItem'
+
+    StudentSearchRequest:
+      type: object
+      required: [nisn]
+      properties:
+        nisn:
+          type: string
+          description: Satu atau banyak NISN dipisah koma/spasi/baris baru/titik koma.
+          example: '0000000001, 0000000002'
+        scope_id:
+          type: string
+          pattern: '^[a-f0-9]{24}$'
+          description: Scope yang di-assign; kosong = satu-satunya scope.
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50000
+          default: 20000
+
+    StudentResult:
+      type: object
+      properties:
+        nama:
+          type: string
+        nisn:
+          type: string
+        rombel:
+          type: string
+          description: Kosong jika siswa belum masuk rombel.
+        tingkat:
+          type: string
+        nipd:
+          type: string
+        registrasi_id:
+          type: string
+        has_rombel:
+          type: boolean
+        nipd_empty:
+          type: boolean
+
+    StudentSearchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/StudentResult'
+        missing:
+          type: array
+          nullable: true
+          items:
+            type: string
+        total_students:
+          type: integer
+        fetched_at:
+          type: string
+          format: date-time
+        from_cache:
+          type: boolean
